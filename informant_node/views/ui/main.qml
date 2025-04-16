@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Themes
+import DHT
 
 Window {
     id: root
@@ -17,26 +18,11 @@ Window {
         anchors.fill: parent
         spacing: 0
 
-        ColumnLayout {
-            id: left_column
+        Rectangle {
+            id: leftColumn
+            color: ThemeManager.getColor("background")
             Layout.fillHeight: true
             Layout.fillWidth: true
-            spacing: 0
-
-            Rectangle {
-                id: left_column_background
-                color: ThemeManager.currentTheme.background
-                Layout.fillHeight: true
-                Layout.fillWidth: true
-
-                Text {
-                    id: left_column_title
-                    text: "Current DHT"
-                    color: "white"
-                    font.pixelSize: 20
-                    anchors.horizontalCenter: parent.horizontalCenter
-                }
-            }
         }
 
         // Separator
@@ -70,18 +56,17 @@ Window {
         }
     }
 
-    // Theme switch from themes
+    // Theme switch from themes add it at the right bottom corner
     ThemeSwitch {
         id: themeSwitch
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 10
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
     }
 
     Component.onCompleted: {
         console.log("Main QML component loaded")
         console.log("ThemeManager loaded?", ThemeManager !== undefined)
-        console.log("Current theme is: ", ThemeManager.currentTheme)
+        console.log("Current theme is: ", ThemeManager.currentThemeName)
         // ThemeManager.setLight()  // Also triggers the console.log inside ThemeManager
     }
 }

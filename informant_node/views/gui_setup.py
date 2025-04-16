@@ -1,20 +1,32 @@
 import os
+import importlib
+
 from PySide6.QtCore import QCoreApplication, QUrl, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 
+from resource_compiler import build_resources
+
+
 class GUI:
-    def __init__(self, import_path_dirs: list[str] = None, entry_file_path: str = None):
+    def __init__(self, informant_node, import_path_dirs: list[str] = None, entry_file_path: str = None, view_models_dir: str = None):
         self.import_path_dirs = import_path_dirs or []
         self.entry_file_path = entry_file_path
+        self.view_models_dir = view_models_dir
+        self.node = informant_node
         self.app = QGuiApplication()
         self.app.setApplicationName("Informant Node")
 
         self.engine = QQmlApplicationEngine()
 
+        # Compile resources
+        resource_module_path = build_resources()
+        importlib.import_module(resource_module_path)
+
         # Generate qmldir files, add import paths, and load the entry file
         self.__generate_qmldir_files()
         self.__add_import_paths()
+        self.__load_viewmodels()
         self.__load_entry_file()
 
         # Connect the fail-safe handler for QML loading
@@ -61,9 +73,9 @@ class GUI:
                         with open(os.path.join(module_path, qml_file), "r") as qml_file_obj:
                             first_line = qml_file_obj.readline().strip()
                             if first_line.startswith("pragma Singleton"):
-                                start = "singleton"
+                                start = "singleton "
 
-                        qmldir_str = f"{start} {component_name} {qml_file}\n"
+                        qmldir_str = f"{start}{component_name} {qml_file}\n"
                         qmldir_file.write(qmldir_str)
 
                     print(f"[+] Created qmldir file: {qmldir_path}")
@@ -77,6 +89,31 @@ class GUI:
             if os.path.isdir(import_dir) and len(os.listdir(import_dir)) > 0:
                 self.engine.addImportPath(import_dir)
                 print(f"[+] Added import path: {import_dir}")
+
+    def __load_viewmodels(self):
+        """
+        Automatically imports and registers viewmodels in a directory.
+        Assumes each ViewModel is in '\viewmodels' and named `xxx_vm.py` containing a class named `XxxViewModel`.
+        """
+        context = self.engine.rootContext()
+
+        for file in os.listdir(self.view_models_dir):
+            if not file.endswith("_vm.py"):
+                continue
+
+            module_name = file[:-3]  # remove .py
+            class_name = ''.join(
+                [part.capitalize() for part in module_name.replace("_vm", "").split("_")]) + "ViewModel"
+
+            try:
+                module = importlib.import_module(f"views.viewmodels.{module_name}")
+                ViewModelClass = getattr(module, class_name)
+                instance = ViewModelClass()
+                context.setContextProperty(module_name.replace("_vm", "VM"), instance)
+                print(f"[+] Auto-registered ViewModel: {class_name}")
+            except (ImportError, AttributeError) as e:
+                print(f"[!] Failed to load {file}: {e}")
+
 
     def __load_entry_file(self):
         """

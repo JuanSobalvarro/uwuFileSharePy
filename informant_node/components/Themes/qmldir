@@ -1,5 +1,0 @@
-module Themes
-singleton DarkTheme DarkTheme.qml
-singleton LightTheme LightTheme.qml
-singleton ThemeManager ThemeManager.qml
- ThemeSwitch ThemeSwitch.qml
