@@ -28,7 +28,7 @@ class UWUProtocol:
         try:
             return json.loads(raw.decode())
         except json.JSONDecodeError:
-            raise ValueError("[PROTOCOL] Invalid JSON format")
+            raise ValueError(f"[PROTOCOL] Invalid JSON format. JSON decode error: {raw.decode()}")
 
     @staticmethod
     def is_valid(msg: dict) -> bool:

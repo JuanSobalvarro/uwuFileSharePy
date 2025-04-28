@@ -1,10 +1,15 @@
 import json
 import asyncio
 import threading
+import logging
 from typing import Tuple
 
 from .protocol import UWUProtocol
+from .enums import MessageType, RequestAction, ResponseAction
 from .base_handler import UWUHandlerBase
+
+logging.basicConfig(level=logging.INFO)
+
 
 class UWUService:
     def __init__(self, host="0.0.0.0", port=6000, handler: UWUHandlerBase = None, periodical_tasks_cbk: Tuple[callable, int] = None):
@@ -36,49 +41,51 @@ class UWUService:
         return self.server is not None and self.server.is_serving()
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-
-        print(f"[UWU_SERVICE] Handling client connection")
+        logging.info("[UWU_SERVICE] Handling client connection")
 
         try:
-            data = await reader.read()
+            # Set a timeout for handling the client request
+            timeout = 10  # Timeout in seconds
+            logging.info("[UWU_SERVICE] Waiting for data from client...")
+            data = await reader.read(4096)
             if not data:
+                logging.warning("[UWU_SERVICE] No data received from client.")
                 return
 
-            # Message is the unit of communication (so the data needs to be decoded from bytes to json)
+            # Parse and validate the message
             message = UWUProtocol.parse_message(data)
-
             if not UWUProtocol.is_valid(message):
-                print("[UWU_SERVICE] Invalid message received")
+                logging.error("[UWU_SERVICE] Invalid message received.")
                 return
 
-            print("[UWU_SERVICE] Message received:", message)
+            logging.info(f"[UWU_SERVICE] Message received: {message}")
 
+            print(f"[UWU_SERVICE] Loaded handlers:{self.handlers}")
+
+            # Find the appropriate handler
             handler = self.handlers.get((message["type"], message["action"]))
-
             if not handler:
-                print(f"[UWU_SERVICE] No handler for message type: {message['type'], message['action']}")
+                logging.error(f"[UWU_SERVICE] No handler for message type: {message['type'], message['action']}")
                 return
 
-            # Once we have a handler we need to pass the message, reader and writer to it
-            result = await handler(message, reader, writer)
+            # Execute the handler with a timeout
+            await asyncio.wait_for(handler(message, reader, writer), timeout=timeout)
 
-            # Once we have a result we need to do something with it, we should pass that result upper in the app layers,
-            # maybe to the node cli or gui, etc. This action is defined on the type of message we are handling. If request
-            # our result should be the response from the corresponding node (peer or informant), if event do nothing, everything
-            # should have been exexcuted on handler, if response we should also do nothing since we are just handling a response
-            # in resume a handler will return a result for any message that is a Request type, but for others it will just return true or false
-
-            # havent found a use yet!!!!!!!!!!!! everything just executes
-
-        except KeyboardInterrupt:
-            print("[UWU_SERVICE] Server shutting down...")
-            writer.close()
-            await writer.wait_closed()
-            print("[UWU_SERVICE] Connection closed")
-            return
+        except asyncio.TimeoutError:
+            logging.error("[UWU_SERVICE] Request timed out")
+            response = UWUProtocol.create_message(
+                MessageType.RESPONSE, ResponseAction.TIMEOUT.value, {}, {"message": "Request timed out"}
+            )
+            writer.write(response)
+            await writer.drain()
 
         except Exception as e:
-            print(f"[UWU_SERVICE] Error handling client: {e}")
+            logging.error(f"[UWU_SERVICE] Error handling client: {e}")
+
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            logging.info("[UWU_SERVICE] Connection closed")
 
     async def get_server(self):
         """
@@ -105,6 +112,7 @@ class UWUService:
             periodic_task = asyncio.create_task(self.__run_periodical_tasks_loop(interval=self.periodical_interval))
 
         try:
+            logging.info("[UWU_SERVICE] Starting serve forever")
             async with self.server:
                 await self.server.serve_forever()
         except asyncio.CancelledError:
@@ -143,16 +151,16 @@ class UWUService:
 
     async def __run_periodical_tasks_loop(self, interval: int):
         """
-        Runs the periodical_tasks() method every `interval` seconds.
+        Runs the periodical_tasks() method every `interval` seconds in a non-blocking manner.
         """
         print(f"[UWU_SERVICE] Periodic task loop started with interval = {interval}s")
         try:
             while True:
+                # Schedule the periodic task and allow other tasks to run
                 await asyncio.sleep(interval)
-                await self.periodical_tasks()
+                asyncio.create_task(self.periodical_tasks())
         except asyncio.CancelledError:
             print("[UWU_SERVICE] Periodic task loop cancelled.")
-
 
     def stop_service(self):
         """
@@ -167,4 +175,5 @@ class UWUService:
         Starts the server in a new thread.
         :return:
         """
+        print("[UWU_SERVICE] Starting server...")
         threading.Thread(target=self.__server_thread_func, daemon=True).start()

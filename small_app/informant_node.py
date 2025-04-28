@@ -1,9 +1,12 @@
 import socket
 import json
 import logging
+import asyncio
 from models.dht import DHT
 from services.uwu_protocol.service import UWUService
 from services.uwu_protocol.base_handler import UWUHandlerBase
+from services.uwu_protocol.enums import MessageType, RequestAction, ResponseAction
+from services.uwu_protocol.protocol import UWUProtocol
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,33 +20,41 @@ class InformantNodeHandler(UWUHandlerBase):
         Bind actions to handler methods.
         """
         return {
-            ("REQUEST", "PEER_CONNECT"): self.handle_peer_connect,
-            ("REQUEST", "PEER_DISCOVERY"): self.handle_peer_discovery,
-            ("REQUEST", "DHT_UPDATE"): self.handle_dht_update,
+            (MessageType.REQUEST, RequestAction.REGISTER): self.handle_register,
+            (MessageType.REQUEST, RequestAction.GET_DHT): self.handle_get_dht,
         }
 
-    async def handle_peer_connect(self, message, reader, writer):
+    async def handle_register(self, message, reader, writer):
         """
-        Handle a peer connection request.
+        Handle file registration requests from peers.
         """
-        peer_info = message.get("peer_info")
-        if peer_info:
-            peer_address = f"{peer_info['host']}:{peer_info['port']}"
-            self.informant_node.add_peer(peer_address)
-            logging.info(f"Peer connected: {peer_address}")
-            response = {"type": "PEER_CONNECT_ACK", "message": "Peer added successfully"}
-            writer.write(json.dumps(response).encode())
+        try:
+            peer_info = message.get("peer_info")
+            files = message.get("data", {}).get("files", [])
+            if peer_info and files:
+                for file in files:
+                    self.informant_node.dht.add_file(
+                        filename=file["filename"],
+                        host=peer_info["host"],
+                        port=peer_info["port"],
+                        details={"size": file["size"]}
+                    )
+                logging.info(f"Files registered by peer {peer_info['host']}:{peer_info['port']}")
+                response = UWUProtocol.create_message(MessageType.RESPONSE, ResponseAction.REGISTER_ACK, peer_info, {"data": "Files registered successfully"})
+                writer.write(response)
+                await writer.drain()
+            else:
+                logging.warning("Invalid REGISTER request received")
+        except Exception as e:
+            logging.error(f"Error handling REGISTER request: {e}")
+            response = UWUProtocol.create_message(
+                MessageType.ERROR,
+                ResponseAction.REGISTER_ACK,
+                {},
+                {"message": "Failed to register files"}
+            )
+            writer.write(response)
             await writer.drain()
-
-
-    async def handle_peer_discovery(self, message, reader, writer):
-        """
-        Handle peer discovery request from a peer node.
-        """
-        logging.info(f"Peer discovery request from {message['peer_info']}")
-        response = {"type": "PEER_LIST", "peers": self.informant_node.get_peers()}
-        writer.write(json.dumps(response).encode())
-        await writer.drain()
 
     async def handle_dht_update(self, message, reader, writer):
         """
@@ -51,9 +62,44 @@ class InformantNodeHandler(UWUHandlerBase):
         """
         dht_data = message.get("data", {})
         self.informant_node.update_dht(dht_data)
-        response = {"type": "DHT_UPDATE_ACK"}
+        response = {"type": MessageType.RESPONSE.value, "action": ResponseAction.DHT_UPDATE_ACK.value, "message": "DHT updated successfully"}
         writer.write(json.dumps(response).encode())
         await writer.drain()
+
+    async def handle_get_dht(self, message, reader, writer):
+        """
+        Handle requests to retrieve the current DHT.
+        """
+        try:
+            logging.info(f"DHT request from {message['peer_info']}")
+            response = UWUProtocol.create_message(
+                msg_type=MessageType.RESPONSE,
+                action=ResponseAction.GET_DHT_RESPONSE,
+                peer_info=message["peer_info"],
+                data={"dht": self.informant_node.dht.get_all_files()}
+            )
+            new_reader, new_writer = await asyncio.open_connection(message["peer_info"]["host"], message["peer_info"]["port"])
+            new_writer.write(response)
+            await new_writer.drain()
+            logging.info(f"Sending DHT response: {response.decode()}")
+        except Exception as e:
+            logging.error(f"Error handling GET_DHT request: {e}")
+            self.send_error_from_exception(writer, e)
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    def send_error_from_exception(self, writer, exception):
+        """
+        Send an error message in response to an exception.
+        """
+        error_response = UWUProtocol.create_message(
+            MessageType.ERROR,
+            ResponseAction.ERROR,
+            {},
+            {"message": str(exception) if exception else "Unknown error"}
+        )
+        writer.write(error_response)
 
 
 class InformantNode:

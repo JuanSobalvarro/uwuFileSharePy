@@ -2,7 +2,6 @@ import json
 import os
 from threading import Lock
 import logging
-from typing import Tuple
 
 PERSISTENCE_DEFAULT_FILE = os.path.join(os.path.dirname(__file__), "data", "dht_persistence.json")
 
@@ -12,8 +11,10 @@ class DHT:
     {
         "filename": {
             "providers": {
-                ("host", "port"): { "details": "details" },
-                ...
+                "host": {
+                    "port": { "details": "details" },
+                    ...
+                }
             }
         }
     }
@@ -22,7 +23,7 @@ class DHT:
         self._dht = {}
         self._lock = Lock()
         self.persistence_file = persistence_file
-        self._on_change = None  # ← Hook for ViewModel
+        self._on_change = None  # Hook for ViewModel
 
         logging.basicConfig(level=logging.INFO)
 
@@ -56,31 +57,30 @@ class DHT:
         if self._on_change:
             self._on_change()
 
-    def __create_file_entry(self, filename: str, host: str, port: int, details: str = None) -> dict:
+    def __create_file_entry(self, filename: str, host: str, port: int, details: str = None):
         """
         Creates a new file entry in the DHT.
-        :param filename: Name of the file.
-        :param host: Host where the file is located.
-        :param port: Port where the file is located.
-        :param details: Optional details about the file.
-        :return: A dictionary representing the file entry.
         """
         self._dht[filename] = {
             "providers": {
-                (host, port): details
+                host: {
+                    str(port): details
+                }
             }
         }
 
-    def add_file(self, filename: str, host: str, port: int, details: str = None) -> bool:
+    def add_file(self, filename: str, host: str, port: int, details: str = None):
         with self._lock:
             entry = self._dht.get(filename)
 
             if entry:
-                provider = (host, port)
-
-                # Update or create new details (both cases can be handled automatically)
-                entry["providers"][provider] = details
-
+                host_entry = entry["providers"].get(host)
+                if host_entry:
+                    # Update or add the port entry
+                    host_entry[str(port)] = details
+                else:
+                    # Add a new host entry
+                    entry["providers"][host] = {str(port): details}
             else:
                 self.__create_file_entry(filename, host, port, details)
 
@@ -89,17 +89,21 @@ class DHT:
     def remove_file(self, filename, host, port):
         with self._lock:
             if filename in self._dht:
-                # Check if the host and port are in the providers
-                if (host, port) in self._dht[filename]["providers"]:
-                    del self._dht[filename]["providers"][(host, port)]
+                # Check if the host exists in the providers
+                host_entry = self._dht[filename]["providers"].get(host)
+                if host_entry and str(port) in host_entry:
+                    del host_entry[str(port)]
+                    # Remove the host if no ports remain
+                    if not host_entry:
+                        del self._dht[filename]["providers"][host]
 
                 if self.persistence_file:
                     self._save_persistent_data()
 
                 logging.info(f"[DHT] File '{filename}' removed from DHT.")
-                self._notify_change()  # ← Notify ViewModel
+                self._notify_change()
 
-    def update_node_files(self, files: list[Tuple[str, str]], host: str, port: int):
+    def update_node_files(self, files: list[tuple[str, str]], host: str, port: int):
         with self._lock:
             filenames = [filename for filename, _ in files]
             detail_of_filename = {filename: detail for filename, detail in files}
@@ -109,30 +113,32 @@ class DHT:
                 if filename not in self._dht.keys():
                     self.__create_file_entry(filename, host, port, detail_of_filename[filename])
                     continue
-                self._dht[filename]["providers"][(host, port)] = detail_of_filename[filename]
+                self._dht[filename]["providers"].setdefault(host, {})[str(port)] = detail_of_filename[filename]
 
             # Then, prepare to remove old files
             to_remove = []
             for filename, value in self._dht.items():
-                if (host, port) in value["providers"]:
+                if host in value["providers"] and str(port) in value["providers"][host]:
                     if filename not in filenames:
                         to_remove.append(filename)
 
             for filename in to_remove:
-                if len(self._dht[filename]["providers"]) == 1:
-                    del self._dht[filename]
+                if len(self._dht[filename]["providers"][host]) == 1:
+                    del self._dht[filename]["providers"][host]
                 else:
-                    del self._dht[filename]["providers"][(host, port)]
+                    del self._dht[filename]["providers"][host][str(port)]
+
+                if not self._dht[filename]["providers"]:
+                    del self._dht[filename]
 
             if self.persistence_file:
                 self._save_persistent_data()
 
             self._notify_change()
 
-    def get_all_files(self) -> dict[str: dict[str: dict[Tuple[str, int]: str]]]:
+    def get_all_files(self) -> dict:
         """
         Returns all files in the DHT.
-        :return:
         """
         with self._lock:
             print(f"[DHT] Getting all files: {self._dht}")
@@ -141,13 +147,13 @@ class DHT:
     def get_nodes(self):
         """
         Retrieve all nodes in the DHT.
-        :return:
         """
         with self._lock:
             nodes = set()
             for filename, data in self._dht.items():
-                for (host, port), details in data.get("providers", {}).items():
-                    nodes.add((host, port))
+                for host, ports in data.get("providers", {}).items():
+                    for port in ports:
+                        nodes.add((host, int(port)))
 
             print(f"[DHT] Getting nodes: {nodes}")
             return list(nodes)
