@@ -14,16 +14,16 @@ We use the following technologies in this project:
 
 ## UWU Protocol
 This project uses TCP/IP for communication and uses a custom application layer protocol called uwu-protocol. 
-The protocol is designed to be simple and efficient, allowing for easy communication between nodes. 
+The protocol is designed to be simple and easy, allowing for easy communication between nodes. 
 
 ### Protocol Structure
 - **Message**: The basic unit of communication in the protocol. A message is formatted in JSON and data like this:
 ```json
 {
-    "type": "message_type",
-    "status": "status_type",
+    "type": "message_type[request, response, event, etc]",
+    "action": "action_selection[get_dht, register, error, success, etc]",
     "data": {
-        "key": "value"
+        "key": "value" 
     }
 }
 ```
