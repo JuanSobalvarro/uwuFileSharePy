@@ -84,9 +84,9 @@ class PeerNodeGUI(QMainWindow):
         """
         themes = {
             "light": {
-                "background": "#ffffff",
-                "text": "#1e1e1e",
-                "accent": "#e0e0e0",
+                "background": "#f8f9fa",  # Soft light gray
+                "text": "#2c2c2c",  # Darker text for better contrast
+                "accent": "#d8bfd8",  # Pastel purple for accents
             },
             "dark": {
                 "background": "#1e1e1e",
@@ -153,20 +153,24 @@ class PeerNodeGUI(QMainWindow):
         Refresh the list of files available in the DHT (external files).
         """
         self.dht_files_table.setRowCount(0)
-        dht_data = self.peer_node.dht.get("dht", {})  # Safely get the 'dht' part
+        dht_data = self.peer_node.dht  # Use the updated DHT structure
         print(f"[PEER_GUI] DHT to be rendered: ", dht_data)
 
         for filename, file_info in dht_data.items():
             providers = file_info.get("providers", {})
             for host, ports in providers.items():
-                for port, details in ports.items():
+                for port, port_data in ports.items():
+                    details = port_data.get("details", {})
+                    file_size = details.get("size", "Unknown")
+
                     # Skip files shared by this node
                     if host == self.peer_node.host and int(port) == self.peer_node.port:
                         continue
+
                     row_position = self.dht_files_table.rowCount()
                     self.dht_files_table.insertRow(row_position)
                     self.dht_files_table.setItem(row_position, 0, QTableWidgetItem(filename))
-                    self.dht_files_table.setItem(row_position, 1, QTableWidgetItem(str(details.get("size", "Unknown"))))
+                    self.dht_files_table.setItem(row_position, 1, QTableWidgetItem(str(file_size)))
                     self.dht_files_table.setItem(row_position, 2, QTableWidgetItem(host))
                     self.dht_files_table.setItem(row_position, 3, QTableWidgetItem(str(port)))
 

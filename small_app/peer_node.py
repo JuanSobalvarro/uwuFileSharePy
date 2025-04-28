@@ -170,22 +170,21 @@ class PeerNodeHandler(UWUHandlerBase):
         except Exception as e:
             logging.error(f"Error fetching DHT from Informant Node: {e}")
 
-
     async def handle_get_dht_response(self, message, reader, writer):
         """
         Handle the DHT response from the informant node.
         """
         logging.info("[PEER_NODE_HANDLER] Handling DHT response from Informant Node")
         try:
-            logging.info("[PEER_NODE_HANDLER] Handling DHT response from Informant Node: ", message)
-            dht_data = message.get("data", {})
+            dht_data = message.get("data", {}).get("dht", {})
             if dht_data:
+                # Replace the peer's DHT with the informant node's DHT
                 self.peer_node.dht = dht_data
-                logging.info("DHT successfully updated from Informant Node.")
+                logging.info("[PEER_NODE_HANDLER] DHT successfully synchronized with Informant Node.")
             else:
-                logging.warning("Received empty DHT data from Informant Node.")
+                logging.warning("[PEER_NODE_HANDLER] Received empty DHT data from Informant Node.")
         except Exception as e:
-            logging.error(f"Error processing DHT response: {e}")
+            logging.error(f"[PEER_NODE_HANDLER] Error processing DHT response: {e}")
 
     async def periodical(self):
         """

@@ -77,14 +77,14 @@ class InformantNodeGUI(QMainWindow):
         """
         themes = {
             "light": {
-                "background": "#ffffff",
-                "text": "#1e1e1e",
-                "accent": "#e0e0e0",
+                "background": "#f8f9fa",  # Soft light gray
+                "text": "#2c2c2c",  # Darker text for better contrast
+                "accent": "#d8bfd8",  # Pastel purple for accents
             },
             "dark": {
                 "background": "#1e1e1e",
                 "text": "#f2f2f2",
-                "accent": "#2d2d30",
+                "accent": "#716c98",
             },
         }
 
@@ -108,8 +108,6 @@ class InformantNodeGUI(QMainWindow):
         """
         self.dht_table.setStyleSheet(table_style)
 
-    # Other methods (refresh_data, etc.) remain unchanged
-
     def refresh_data(self):
         # Refresh DHT Table
         self.dht_table.setRowCount(0)
@@ -124,8 +122,9 @@ class InformantNodeGUI(QMainWindow):
 
         # Refresh Nodes List
         self.nodes_list.clear()
-        for peer in self.informant_node.get_peers():
-            self.nodes_list.addItem(peer)
+        connected_nodes = self.informant_node.get_connected_nodes()
+        for host, port in connected_nodes:
+            self.nodes_list.addItem(f"{host}:{port}")
 
 
 def main():
@@ -138,8 +137,8 @@ def main():
     from informant_node import InformantNode
 
     # Create Informant Node
-    persistence_file = "dht_persistence.json"
-    informant_node = InformantNode(host=args.ip, port=args.port, persistence_file=persistence_file)
+    # persistence_file = "dht_persistence.json"
+    informant_node = InformantNode(host=args.ip, port=args.port, persistence_file=None)
     informant_node.start_informant_node()
 
     # Start GUI

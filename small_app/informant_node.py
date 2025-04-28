@@ -149,6 +149,21 @@ class InformantNode:
             except Exception as e:
                 logging.error(f"Failed to broadcast to peer {peer}: {e}")
 
+    def get_connected_nodes(self):
+        """
+        Get a list of tuples (host, port) for connected nodes.
+        """
+        connected_nodes = []
+        # The connected nodes is all the nodes present on the DHT
+        for filename, file_data in self.dht.get_all_files().items():
+            for host, ports in file_data["providers"].items():
+                for port in ports.keys():
+                    connected_nodes.append((host, int(port)))
+        # remove duplicates
+        connected_nodes = list(set(connected_nodes))
+
+        return connected_nodes
+
     def send_message(self, message, peer_ip, peer_port):
         """
         Send a message to a peer.
